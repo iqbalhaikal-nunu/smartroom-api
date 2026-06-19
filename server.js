@@ -1,9 +1,11 @@
 const express = require('express');
+const cors = require('cors');
 const { ObjectId } = require('mongodb');
 const connectDB = require('./db');
 require('dotenv').config();
 
 const app = express();
+app.use(cors());
 app.use(express.json()); // lets us read JSON from request bodies
 
 const PORT = process.env.PORT || 3000;
