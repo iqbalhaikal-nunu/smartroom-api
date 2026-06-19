@@ -6,16 +6,36 @@ require('dotenv').config();
 
 const app = express();
 app.use(cors());
-app.use(express.json()); // lets us read JSON from request bodies
+app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
 // ===================== ROOMS ROUTES =====================
+// Matches Room.java fields: roomName, capacity, availability, speciality
 
 // GET all rooms
 app.get('/rooms', async (req, res) => {
   const db = await connectDB();
   const rooms = await db.collection('rooms').find().toArray();
+  res.json(rooms);
+});
+
+// GET rooms with optional search filters: /rooms/search?speciality=Conference&minCapacity=10
+app.get('/rooms/search', async (req, res) => {
+  const db = await connectDB();
+  const filter = {};
+
+  if (req.query.speciality) {
+    filter.speciality = req.query.speciality;
+  }
+  if (req.query.minCapacity) {
+    filter.capacity = { $gte: parseInt(req.query.minCapacity) };
+  }
+  if (req.query.availability) {
+    filter.availability = req.query.availability; // e.g. "Available"
+  }
+
+  const rooms = await db.collection('rooms').find(filter).toArray();
   res.json(rooms);
 });
 
@@ -30,7 +50,13 @@ app.get('/rooms/:id', async (req, res) => {
 // POST create a new room
 app.post('/rooms', async (req, res) => {
   const db = await connectDB();
-  const result = await db.collection('rooms').insertOne(req.body);
+  const room = {
+    roomName: req.body.roomName,
+    capacity: req.body.capacity,
+    availability: req.body.availability || 'Available',
+    speciality: req.body.speciality
+  };
+  const result = await db.collection('rooms').insertOne(room);
   res.status(201).json({ insertedId: result.insertedId });
 });
 
@@ -41,6 +67,7 @@ app.put('/rooms/:id', async (req, res) => {
     { _id: new ObjectId(req.params.id) },
     { $set: req.body }
   );
+  if (result.matchedCount === 0) return res.status(404).json({ error: 'Room not found' });
   res.json({ modifiedCount: result.modifiedCount });
 });
 
@@ -52,6 +79,9 @@ app.delete('/rooms/:id', async (req, res) => {
 });
 
 // ===================== BOOKINGS ROUTES =====================
+// Matches Booking.java fields: roomId, studentId, bookingDate, timeSlot, status
+// Matches BookingDAO.java logic: check slot conflict, insert as 'Confirmed',
+// cancel = update status to 'Cancelled' (not deleted)
 
 // GET all bookings
 app.get('/bookings', async (req, res) => {
@@ -60,50 +90,75 @@ app.get('/bookings', async (req, res) => {
   res.json(bookings);
 });
 
+// GET bookings for a specific room
+app.get('/bookings/room/:roomId', async (req, res) => {
+  const db = await connectDB();
+  const bookings = await db.collection('bookings')
+    .find({ roomId: req.params.roomId })
+    .toArray();
+  res.json(bookings);
+});
+
 // POST create a new booking
+// Body: { roomId, studentId, bookingDate, timeSlot }
 app.post('/bookings', async (req, res) => {
   const db = await connectDB();
+  const { roomId, studentId, bookingDate, timeSlot } = req.body;
 
-  // check the room exists and is available
-  const room = await db.collection('rooms').findOne({ _id: new ObjectId(req.body.roomId) });
+  if (!roomId || !studentId || !bookingDate || !timeSlot) {
+    return res.status(400).json({ error: 'roomId, studentId, bookingDate, and timeSlot are required' });
+  }
+
+  // confirm the room exists
+  const room = await db.collection('rooms').findOne({ _id: new ObjectId(roomId) });
   if (!room) return res.status(404).json({ error: 'Room not found' });
-  if (!room.isAvailable) return res.status(400).json({ error: 'Room is not available' });
+
+  // check slot conflict: same room + same date + same time slot + status not Cancelled
+  const existing = await db.collection('bookings').findOne({
+    roomId: roomId,
+    bookingDate: bookingDate,
+    timeSlot: timeSlot,
+    status: { $ne: 'Cancelled' }
+  });
+
+  if (existing) {
+    return res.status(409).json({ error: 'This room is already booked for that date and time slot' });
+  }
 
   const booking = {
-    roomId: new ObjectId(req.body.roomId),
-    bookedBy: req.body.bookedBy,
-    date: req.body.date,
-    startTime: req.body.startTime,
-    endTime: req.body.endTime
+    roomId: roomId,
+    studentId: studentId,
+    bookingDate: bookingDate,
+    timeSlot: timeSlot,
+    status: 'Confirmed'
   };
 
   const result = await db.collection('bookings').insertOne(booking);
-
-  // mark the room as unavailable
-  await db.collection('rooms').updateOne(
-    { _id: new ObjectId(req.body.roomId) },
-    { $set: { isAvailable: false } }
-  );
-
-  res.status(201).json({ insertedId: result.insertedId });
+  res.status(201).json({ insertedId: result.insertedId, ...booking });
 });
 
-// DELETE a booking (cancel it, and free up the room again)
-app.delete('/bookings/:id', async (req, res) => {
+// PUT update booking status (e.g. cancel) — matches updateBookingStatus()
+// Body: { status: "Cancelled" }
+app.put('/bookings/:id/status', async (req, res) => {
   const db = await connectDB();
+  const { status } = req.body;
 
-  const booking = await db.collection('bookings').findOne({ _id: new ObjectId(req.params.id) });
-  if (!booking) return res.status(404).json({ error: 'Booking not found' });
+  if (!status) return res.status(400).json({ error: 'status is required' });
 
-  await db.collection('bookings').deleteOne({ _id: new ObjectId(req.params.id) });
-
-  // free the room back up
-  await db.collection('rooms').updateOne(
-    { _id: booking.roomId },
-    { $set: { isAvailable: true } }
+  const result = await db.collection('bookings').updateOne(
+    { _id: new ObjectId(req.params.id) },
+    { $set: { status: status } }
   );
 
-  res.json({ message: 'Booking cancelled, room is now available' });
+  if (result.matchedCount === 0) return res.status(404).json({ error: 'Booking not found' });
+  res.json({ modifiedCount: result.modifiedCount, status: status });
+});
+
+// DELETE a booking permanently (hard delete, separate from cancelling)
+app.delete('/bookings/:id', async (req, res) => {
+  const db = await connectDB();
+  const result = await db.collection('bookings').deleteOne({ _id: new ObjectId(req.params.id) });
+  res.json({ deletedCount: result.deletedCount });
 });
 
 // ===================== START SERVER =====================
