@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const { ObjectId } = require('mongodb');
 const connectDB = require('./db');
@@ -8,6 +9,11 @@ require('dotenv').config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Serve the frontend (public/) — this is what makes the UI show up at
+// https://smartroom-api-1.onrender.com/ instead of "Cannot GET /"
+app.use(express.static(path.join(__dirname, 'public')));
+
 app.use('/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;

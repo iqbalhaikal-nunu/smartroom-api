@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Student Dashboard</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="app.js"></script>
+</head>
+<body>
+    <div class="container">
+
+        <div class="header-bar">
+            <h1>Student Dashboard</h1>
+            <button type="button" class="btn-logout" onclick="logout()">Logout 🚪</button>
+        </div>
+
+        <h3 style="margin-bottom: 15px;">Available Rooms</h3>
+        <table>
+            <thead style="background: #059669; color: white;">
+                <tr>
+                    <th>Room Name</th>
+                    <th>Capacity</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="roomsTbody">
+                <tr><td colspan="4" style="text-align:center; padding:20px; color:#64748b;">Loading rooms...</td></tr>
+            </tbody>
+        </table>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top: 40px; margin-bottom:20px;">
+            <h2 style="margin: 0;">My Bookings</h2>
+            <div>
+                <a href="booking-success.html" class="nav-btn" style="background:#059669;">📄 View Latest Confirmation</a>
+                <button type="button" class="nav-btn" style="background:#2563eb; margin-left:10px; border:none; cursor:pointer;" onclick="loadDashboard()">🔄 Refresh</button>
+            </div>
+        </div>
+
+        <table>
+            <thead style="background: #1e293b; color: white;">
+                <tr>
+                    <th>Room</th>
+                    <th>Date</th>
+                    <th>Time Slot</th>
+                    <th>Status</th>
+                    <th style="text-align: center;">Action</th>
+                </tr>
+            </thead>
+            <tbody id="bookingsTbody">
+                <tr><td colspan="5" style="text-align:center; padding:20px; color:#64748b;">Loading bookings...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const session = requireLogin();
+        let allRoomsLookup = [];
+
+        window.onload = function () {
+            loadDashboard();
+        };
+
+        function loadDashboard() {
+            Promise.all([
+                fetch('/rooms').then(r => r.json()),
+                fetch('/bookings').then(r => r.json())
+            ]).then(([rooms, bookings]) => {
+                allRoomsLookup = rooms;
+                renderAvailableRooms(rooms);
+                renderMyBookings(bookings);
+            }).catch(err => {
+                console.error("Failed to load dashboard data:", err);
+                renderAvailableRooms([]);
+                renderMyBookings([]);
+            });
+        }
+
+        function renderAvailableRooms(rooms) {
+            const tbody = document.getElementById('roomsTbody');
+            tbody.innerHTML = '';
+
+            if (!rooms || rooms.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#64748b;">No rooms registered.</td></tr>';
+                return;
+            }
+
+            rooms.forEach(r => {
+                let statusBadge = '<span class="badge-success">Available</span>';
+                let actionButton = `<a href="book-room.html?id=${r._id}" class="btn-submit">Book Now</a>`;
+
+                if (r.availability === "Under Maintenance") {
+                    statusBadge = '<span class="badge-danger">Under Maintenance</span>';
+                    actionButton = '<button class="btn-disabled" disabled>Unavailable</button>';
+                }
+
+                const row = `<tr>
+                    <td><b>${escapeHtml(r.roomName)}</b></td>
+                    <td>${r.capacity} Pax</td>
+                    <td>${statusBadge}</td>
+                    <td>${actionButton}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        }
+
+        function renderMyBookings(bookings) {
+            const tbody = document.getElementById('bookingsTbody');
+            tbody.innerHTML = '';
+
+            const myBookings = (bookings || []).filter(b =>
+                b.studentId && session && b.studentId.toString().toLowerCase().trim() === session.userId.toString().toLowerCase().trim()
+            );
+
+            if (myBookings.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#64748b;">You have no bookings yet.</td></tr>';
+                return;
+            }
+
+            myBookings.forEach(b => {
+                const room = allRoomsLookup.find(r => r._id === b.roomId);
+                const roomLabel = room ? room.roomName : `Room ${b.roomId}`;
+
+                let statusClass = 'badge-success';
+                let actionButton = '';
+                if (b.status === "Confirmed") {
+                    statusClass = 'badge-success';
+                    actionButton = `<button type="button" class="btn-cancel" onclick="requestCancellation('${b._id}')">Cancel</button>`;
+                } else if (b.status === "Cancellation Pending") {
+                    statusClass = 'badge-warning';
+                    actionButton = '<span style="color:#94a3b8; font-size:13px;">Awaiting admin approval</span>';
+                } else if (b.status === "Cancelled") {
+                    statusClass = 'badge-danger';
+                    actionButton = '<span style="color:#cbd5e1; font-size:13px;">Cancelled</span>';
+                }
+
+                const row = `<tr>
+                    <td><b>${escapeHtml(roomLabel)}</b></td>
+                    <td>${escapeHtml(b.bookingDate)}</td>
+                    <td>${escapeHtml(b.timeSlot)}</td>
+                    <td><b class="${statusClass}">${escapeHtml(b.status)}</b></td>
+                    <td style="text-align:center;">${actionButton}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        }
+
+        function requestCancellation(bookingId) {
+            if (!confirm("Cancel this booking? Your request will need admin approval.")) return;
+
+            fetch(`/bookings/${bookingId}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'Cancellation Pending' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.modifiedCount !== undefined) {
+                    loadDashboard();
+                } else {
+                    alert("Could not process cancellation: " + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(err => {
+                console.error("Cancellation request failed:", err);
+                alert("Server connection error while requesting cancellation.");
+            });
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+    </script>
+</body>
+</html>

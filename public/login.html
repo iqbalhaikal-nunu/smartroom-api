@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SRBS Login</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="app.js"></script>
+</head>
+<body>
+    <div class="login-box">
+        <h2 style="text-align: center;">SRBS Login</h2>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label>User ID / Username</label>
+                <input type="text" name="userid" required>
+            </div>
+
+            <div class="form-group">
+                <label>Password</label>
+                <div class="password-container">
+                    <input type="password" id="loginPassword" name="password" required>
+                    <span id="loginEyeIcon" class="eye-toggle" onclick="toggleLoginPassword()">👁️</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Login As</label>
+                <select name="role">
+                    <option value="student">Student</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <button type="submit" class="btn-login">Login</button>
+
+            <div id="errorBox" class="error-msg"></div>
+        </form>
+
+        <div style="text-align: center; margin-top: 20px; font-size: 13.5px; color: #64748b;">
+            Don't have an account? <a href="register.html" style="color: #1e40af; text-decoration: none; font-weight: 600;">Sign Up</a>
+        </div>
+    </div>
+
+    <script>
+        function toggleLoginPassword() {
+            const passwordInput = document.getElementById("loginPassword");
+            const eyeIcon = document.getElementById("loginEyeIcon");
+            if (passwordInput.type === "password") {
+                passwordInput.type = "text";
+                eyeIcon.textContent = "👁️‍🗨️";
+            } else {
+                passwordInput.type = "password";
+                eyeIcon.textContent = "👁️";
+            }
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            const form = event.target;
+            const errorElement = document.getElementById('errorBox');
+            errorElement.style.display = 'none';
+            errorElement.innerText = '';
+
+            const payload = {
+                userid: form.userid.value,
+                password: form.password.value,
+                role: form.role.value
+            };
+
+            fetch('/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "success") {
+                    setSession(data.userId, data.role);
+                    window.location.href = data.role === "admin" ? "room-management.html" : "dashboard.html";
+                } else {
+                    errorElement.innerText = data.message || "Invalid credentials. Please try again.";
+                    errorElement.style.display = 'block';
+                }
+            })
+            .catch(err => {
+                console.error("Login request failed:", err);
+                errorElement.innerText = "Error connecting to the SmartRoom API.";
+                errorElement.style.display = 'block';
+            });
+        });
+    </script>
+</body>
+</html>

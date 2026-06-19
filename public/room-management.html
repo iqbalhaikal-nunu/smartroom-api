@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Room Management</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="app.js"></script>
+</head>
+<body>
+
+<div class="container">
+
+    <div class="header-bar">
+        <h1 style="margin: 0;">Room Management</h1>
+        <button type="button" class="btn-logout" onclick="logout()">Logout 🚪</button>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25%;">Room Details</th>
+                <th style="width: 8%;">Cap.</th>
+                <th style="width: 18%;">Current Status</th>
+                <th style="width: 29%;">Speciality</th>
+                <th style="width: 20%;">Action</th>
+            </tr>
+        </thead>
+        <tbody id="roomTableBody">
+            <tr><td colspan="5" style="text-align: center; color: #64748b;">Loading rooms...</td></tr>
+        </tbody>
+    </table>
+
+    <div class="form-section">
+        <h3>Add New Room</h3>
+        <form id="addRoomForm" class="form-inline">
+            <div class="form-group">
+                <label>Room Name</label>
+                <input type="text" name="roomName" placeholder="e.g. Small Pod D" required>
+            </div>
+            <div class="form-group">
+                <label>Capacity</label>
+                <input type="number" name="capacity" placeholder="e.g. 4" required>
+            </div>
+            <div class="form-group" style="flex: 2;">
+                <label>Speciality</label>
+                <input type="text" name="speciality" placeholder="e.g. Smart TV, Whiteboard" required>
+            </div>
+            <button type="submit" class="btn-submit">Add Room</button>
+        </form>
+    </div>
+
+    <hr style="border:0; border-top:1px solid #cbd5e1; margin-top:40px; margin-bottom: 20px;">
+
+    <h3 style="color:#1e3a8a; display:flex; align-items:center; gap:8px;">📋 Live Reservation Log</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Target Room</th>
+                <th>Student ID</th>
+                <th>Reserved Date</th>
+                <th>Time Slot Window</th>
+                <th>Status</th>
+                <th style="width: 15%;">Action</th>
+            </tr>
+        </thead>
+        <tbody id="adminBookingsLogTbody">
+            <tr><td colspan="6" style="text-align:center; color:#64748b; padding: 15px;">Loading bookings...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<div id="roomEditModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Update Room Details</h3>
+            <span class="close-btn" onclick="closeEditModal()">&times;</span>
+        </div>
+        <form id="editRoomForm">
+            <input type="hidden" id="update_id">
+            <input type="hidden" id="update_availability">
+
+            <div class="form-group">
+                <label>Room Name</label>
+                <input type="text" id="update_name" readonly style="background-color: #f1f5f9; color: #64748b;">
+            </div>
+            <div class="form-group">
+                <label>Capacity</label>
+                <input type="number" id="update_capacity" required>
+            </div>
+            <div class="form-group">
+                <label>Speciality</label>
+                <input type="text" id="update_speciality" required>
+            </div>
+
+            <div style="text-align: right; margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn-action" onclick="closeEditModal()">Cancel</button>
+                <button type="submit" class="btn-submit">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let allRooms = []; // keep a lookup so the bookings log can show room names
+
+    requireLogin('admin');
+
+    window.onload = function () {
+        fetchRooms();
+        fetchBookings();
+    };
+
+    // 1. GET /rooms
+    function fetchRooms() {
+        fetch('/rooms')
+            .then(response => response.json())
+            .then(rooms => {
+                allRooms = rooms;
+                renderRoomTable(rooms);
+            })
+            .catch(err => console.error("Failed to load rooms:", err));
+    }
+
+    function renderRoomTable(rooms) {
+        const tbody = document.getElementById('roomTableBody');
+        tbody.innerHTML = '';
+
+        if (!rooms || rooms.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b;">No rooms yet — add one below.</td></tr>';
+            return;
+        }
+
+        rooms.forEach(r => {
+            const currentStatus = r.availability || 'Available';
+            let statusClass = "Available";
+            if (currentStatus.toLowerCase() === "under maintenance" || currentStatus.toLowerCase() === "unavailable") {
+                statusClass = "Unavailable";
+            } else if (currentStatus.toLowerCase() === "occupied" || currentStatus.toLowerCase() === "booked") {
+                statusClass = "Booked";
+            }
+
+            const displaySpeciality = r.speciality ? r.speciality : "-";
+            const toggleAction = currentStatus.toLowerCase() === 'available'
+                ? `<button type="button" class="btn-action" style="background-color:#475569;color:white;" onclick="toggleMaintenance('${r._id}', '${escapeJs(r.roomName)}', true)">Set Maintenance</button>`
+                : `<button type="button" class="btn-action btn-available" style="background-color:#059669;color:white;" onclick="toggleMaintenance('${r._id}', '${escapeJs(r.roomName)}', false)">Set Available</button>`;
+
+            const row = `<tr>
+                <td style="font-weight: 600; color: #0f172a;">${escapeHtml(r.roomName)}</td>
+                <td>${r.capacity}</td>
+                <td><span class="${statusClass}">● ${escapeHtml(currentStatus)}</span></td>
+                <td style="color: #64748b;">${escapeHtml(displaySpeciality)}</td>
+                <td>
+                    <div class="action-container">
+                        <button type="button" class="btn-action btn-edit"
+                            onclick="openEditModal('${r._id}', '${escapeJs(r.roomName)}', '${r.capacity}', '${escapeJs(displaySpeciality)}', '${currentStatus}')">
+                            Update
+                        </button>
+                        ${toggleAction}
+                    </div>
+                </td>
+            </tr>`;
+            tbody.innerHTML += row;
+        });
+    }
+
+    // 2. Set maintenance / available — PUT /rooms/:id
+    function toggleMaintenance(id, roomName, goToMaintenance) {
+        const newStatus = goToMaintenance ? 'Under Maintenance' : 'Available';
+        if (!confirm(`Set ${roomName} to ${newStatus.toUpperCase()}?`)) return;
+
+        fetch(`/rooms/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ availability: newStatus })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.modifiedCount !== undefined) {
+                fetchRooms();
+            } else {
+                alert("State change failed: " + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(err => console.error("Error updating room status:", err));
+    }
+
+    // 3. GET /bookings
+    function fetchBookings() {
+        fetch('/bookings')
+            .then(response => response.json())
+            .then(bookings => renderBookingLog(bookings))
+            .catch(err => console.error("Failed to load bookings:", err));
+    }
+
+    function renderBookingLog(bookings) {
+        const tbody = document.getElementById('adminBookingsLogTbody');
+        tbody.innerHTML = '';
+
+        if (!bookings || bookings.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#64748b; padding: 15px;">No bookings yet.</td></tr>';
+            return;
+        }
+
+        bookings.slice().reverse().forEach(b => {
+            let statusClass = "badge-success";
+            if (b.status === "Cancellation Pending") statusClass = "badge-warning";
+            if (b.status === "Cancelled") statusClass = "badge-danger";
+
+            let actionButton = `<span style="color: #94a3b8; font-size: 13px;">No action required</span>`;
+            if (b.status === "Cancellation Pending") {
+                actionButton = `<button type="button" class="btn-logout" style="padding:4px 10px;font-size:12px;border-radius:4px;" onclick="approveCancellation('${b._id}')">Approve Cancel</button>`;
+            }
+
+            const room = allRooms.find(r => r._id === b.roomId);
+            const roomLabel = room ? room.roomName : `Room ${b.roomId}`;
+
+            const row = `<tr>
+                <td><b>${escapeHtml(roomLabel)}</b></td>
+                <td>${escapeHtml(b.studentId)}</td>
+                <td>${escapeHtml(b.bookingDate)}</td>
+                <td>${escapeHtml(b.timeSlot)}</td>
+                <td><b class="${statusClass}">${escapeHtml(b.status)}</b></td>
+                <td style="text-align:center;">${actionButton}</td>
+            </tr>`;
+            tbody.innerHTML += row;
+        });
+    }
+
+    // 4. Approve a student's cancellation request — PUT /bookings/:id/status
+    function approveCancellation(id) {
+        if (!confirm(`Approve cancellation for booking #${id}?`)) return;
+
+        fetch(`/bookings/${id}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'Cancelled' })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.modifiedCount !== undefined) {
+                fetchBookings();
+            } else {
+                alert("Failed to approve cancellation: " + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(err => console.error("Error approving cancellation:", err));
+    }
+
+    // 5. Add room — POST /rooms
+    document.getElementById('addRoomForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+        const form = event.target;
+
+        const payload = {
+            roomName: form.roomName.value,
+            capacity: parseInt(form.capacity.value, 10),
+            speciality: form.speciality.value,
+            availability: 'Available'
+        };
+
+        fetch('/rooms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.insertedId) {
+                form.reset();
+                fetchRooms();
+            } else {
+                alert("Could not add room: " + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(err => console.error("Error adding room:", err));
+    });
+
+    // 6. Edit room — PUT /rooms/:id
+    document.getElementById('editRoomForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+
+        const id = document.getElementById('update_id').value;
+        const payload = {
+            capacity: parseInt(document.getElementById('update_capacity').value, 10),
+            speciality: document.getElementById('update_speciality').value,
+            availability: document.getElementById('update_availability').value
+        };
+
+        fetch(`/rooms/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.modifiedCount !== undefined) {
+                closeEditModal();
+                fetchRooms();
+            } else {
+                alert("Update failed: " + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(err => console.error("Error updating room:", err));
+    });
+
+    function openEditModal(id, name, capacity, speciality, availability) {
+        document.getElementById('update_id').value = id;
+        document.getElementById('update_name').value = name;
+        document.getElementById('update_capacity').value = capacity;
+        document.getElementById('update_speciality').value = speciality;
+        document.getElementById('update_availability').value = availability;
+        document.getElementById('roomEditModal').style.display = 'flex';
+    }
+
+    function closeEditModal() {
+        document.getElementById('roomEditModal').style.display = 'none';
+    }
+
+    window.onclick = function (event) {
+        const modal = document.getElementById('roomEditModal');
+        if (event.target === modal) modal.style.display = 'none';
+    };
+
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function escapeJs(str) {
+        return String(str).replace(/'/g, "\\'");
+    }
+</script>
+
+</body>
+</html>

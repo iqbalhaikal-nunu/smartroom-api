@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SmartRoom Booking System</title>
+    <script src="app.js"></script>
+</head>
+<body>
+    <p>Redirecting...</p>
+    <script>
+        const session = getSession();
+        if (!session || !session.userId) {
+            window.location.href = 'login.html';
+        } else if (session.role === 'admin') {
+            window.location.href = 'room-management.html';
+        } else {
+            window.location.href = 'dashboard.html';
+        }
+    </script>
+</body>
+</html>

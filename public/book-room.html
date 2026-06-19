@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Book Room</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="app.js"></script>
+</head>
+<body>
+
+<div class="booking-container">
+    <h2 style="text-align:center;">Book Room</h2>
+
+    <div id="errorBox" class="error-msg" style="display:none;">
+        <h3>Room not found or service unavailable</h3>
+    </div>
+
+    <div id="roomInfoBox" class="room-info">
+        <b>Room Name:</b> <span id="lblRoomName">Loading...</span><br><br>
+        <b>Capacity:</b> <span id="lblCapacity">Loading...</span><br><br>
+        <b>Speciality:</b> <span id="lblSpeciality">Loading...</span>
+    </div>
+
+    <form id="bookingForm" style="display:none;">
+        <label>Student ID (Logged In)</label>
+        <input type="text" id="txtStudentId" readonly style="background:#f1f5f9; color:#64748b; cursor:not-allowed;">
+
+        <label>Booking Date</label>
+        <input type="date" id="txtBookingDate" required>
+
+        <label>Time Slot</label>
+        <select id="ddlTimeSlot" required>
+            <option value="">-- Select a time slot --</option>
+            <option value="08:00-10:00">08:00 AM - 10:00 AM</option>
+            <option value="10:00-12:00">10:00 AM - 12:00 PM</option>
+            <option value="12:00-14:00">12:00 PM - 02:00 PM</option>
+            <option value="14:00-16:00">02:00 PM - 04:00 PM</option>
+            <option value="16:00-18:00">04:00 PM - 06:00 PM</option>
+        </select>
+
+        <button type="submit" class="btn">Confirm Booking</button>
+    </form>
+</div>
+
+<script>
+    const session = requireLogin();
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomId = urlParams.get('id');
+    let currentRoom = null;
+
+    window.onload = function () {
+        if (roomId) {
+            loadRoom(roomId);
+        } else {
+            showError();
+        }
+        document.getElementById('txtStudentId').value = session ? session.userId : '';
+    };
+
+    function loadRoom(id) {
+        fetch(`/rooms/${id}`)
+            .then(response => {
+                if (!response.ok) throw new Error('Room not found');
+                return response.json();
+            })
+            .then(room => {
+                currentRoom = room;
+                document.getElementById("lblRoomName").innerText = room.roomName;
+                document.getElementById("lblCapacity").innerText = room.capacity;
+                document.getElementById("lblSpeciality").innerText = room.speciality || '-';
+
+                document.getElementById("roomInfoBox").style.display = "block";
+                document.getElementById("bookingForm").style.display = "block";
+                document.getElementById("errorBox").style.display = "none";
+            })
+            .catch(err => {
+                console.error("Could not load room:", err);
+                showError();
+            });
+    }
+
+    function showError() {
+        document.getElementById("errorBox").style.display = "block";
+        document.getElementById("roomInfoBox").style.display = "none";
+        document.getElementById("bookingForm").style.display = "none";
+    }
+
+    document.getElementById('bookingForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+
+        const payload = {
+            roomId: roomId,
+            studentId: session.userId,
+            bookingDate: document.getElementById('txtBookingDate').value,
+            timeSlot: document.getElementById('ddlTimeSlot').value
+        };
+
+        fetch('/bookings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(async response => {
+            const data = await response.json();
+            if (response.status === 201) {
+                // stash the receipt for booking-success.html
+                localStorage.setItem('latestBooking', JSON.stringify({
+                    roomName: currentRoom ? currentRoom.roomName : `Room ${roomId}`,
+                    speciality: currentRoom ? (currentRoom.speciality || '-') : '-',
+                    bookingDate: payload.bookingDate,
+                    timeSlot: payload.timeSlot,
+                    studentId: payload.studentId
+                }));
+                window.location.href = 'booking-success.html';
+            } else if (response.status === 409) {
+                alert("Reservation failed: this room is already booked for that date and time slot.");
+            } else {
+                alert("Error: " + (data.error || 'Could not complete the booking.'));
+            }
+        })
+        .catch(err => {
+            console.error("Booking request failed:", err);
+            alert("Server connection error while submitting your booking.");
+        });
+    });
+</script>
+
+</body>
+</html>

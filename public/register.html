@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Sign Up - SmartRoom Booking</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body style="display:flex; align-items:center; justify-content:center; min-height:100vh;">
+
+<div class="register-card">
+    <h2>Create an Account</h2>
+    <p>Sign up to start managing and booking your smart rooms.</p>
+
+    <form id="registerForm">
+        <div class="form-group">
+            <label>User ID / Name (for Login)</label>
+            <input type="text" name="userId" placeholder="e.g. Ali or AhmadAdmin" required>
+        </div>
+
+        <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" name="fullName" placeholder="e.g. Ali Bin Abu" required>
+        </div>
+
+        <div class="form-group">
+            <label>Password</label>
+            <div class="password-container">
+                <input type="password" id="registerPassword" name="password" placeholder="••••••••" required>
+                <span id="registerEyeIcon" class="eye-toggle" onclick="toggleRegisterPassword()">👁️</span>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Account Type / Role</label>
+            <select name="role" required>
+                <option value="student">Student</option>
+                <option value="admin">Admin</option>
+            </select>
+        </div>
+
+        <button type="submit" class="btn-register">Sign Up</button>
+    </form>
+
+    <div class="footer-text">
+        Already have an account? <a href="login.html">Log In</a>
+    </div>
+</div>
+
+<script>
+    function toggleRegisterPassword() {
+        const passwordInput = document.getElementById("registerPassword");
+        const eyeIcon = document.getElementById("registerEyeIcon");
+        if (passwordInput.type === "password") {
+            passwordInput.type = "text";
+            eyeIcon.textContent = "👁️‍🗨️";
+        } else {
+            passwordInput.type = "password";
+            eyeIcon.textContent = "👁️";
+        }
+    }
+
+    document.getElementById('registerForm').addEventListener('submit', function (event) {
+        event.preventDefault();
+        const form = event.target;
+
+        const payload = {
+            userId: form.userId.value,
+            fullName: form.fullName.value,
+            password: form.password.value,
+            role: form.role.value
+        };
+
+        fetch('/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "success") {
+                alert(data.message);
+                window.location.href = "login.html";
+            } else {
+                alert("Registration failed: " + data.message);
+            }
+        })
+        .catch(err => {
+            console.error("Register request failed:", err);
+            alert("System error: could not reach the registration service.");
+        });
+    });
+</script>
+
+</body>
+</html>

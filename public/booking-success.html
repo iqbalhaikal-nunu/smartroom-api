@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Booking Confirmation</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="app.js"></script>
+</head>
+<body>
+
+<div class="card">
+    <h2 style="text-align:center; margin-top:0;">Booking Confirmation</h2>
+
+    <div id="errorBox" class="error-msg" style="display:none;">
+        <p>No recent booking found.</p>
+        <a href="dashboard.html" class="btn-back">Return to Dashboard</a>
+    </div>
+
+    <div id="receiptContent" style="display:none;">
+        <p style="text-align:center; color:#16a34a; font-weight:bold;">Status: CONFIRMED</p>
+        <hr>
+        <div class="row"><span class="label">Room Name:</span><span id="lblRoomName">Loading...</span></div>
+        <div class="row"><span class="label">Speciality:</span><span id="lblSpeciality">Loading...</span></div>
+        <div class="row"><span class="label">Booking Date:</span><span id="lblBookingDate">Loading...</span></div>
+        <div class="row"><span class="label">Time Slot:</span><span id="lblTimeSlot">Loading...</span></div>
+        <div class="row"><span class="label">Student ID:</span><span id="lblStudentId">Loading...</span></div>
+
+        <a href="dashboard.html" class="btn-back">Back to Dashboard</a>
+        <button onclick="window.print()" style="width:100%; margin-top:10px; padding:8px; cursor:pointer; background:none; border:1px solid #ccc; border-radius:8px;">Print Receipt</button>
+    </div>
+</div>
+
+<script>
+    const session = requireLogin();
+
+    window.onload = function () {
+        const raw = localStorage.getItem('latestBooking');
+        if (raw) {
+            try {
+                renderReceipt(JSON.parse(raw));
+                return;
+            } catch (e) {
+                console.error("Could not parse stored receipt:", e);
+            }
+        }
+        // fallback: look up the student's most recent booking from the API
+        fetchLatestFromApi();
+    };
+
+    function fetchLatestFromApi() {
+        Promise.all([
+            fetch('/rooms').then(r => r.json()),
+            fetch('/bookings').then(r => r.json())
+        ]).then(([rooms, bookings]) => {
+            const mine = (bookings || []).filter(b => b.studentId === session.userId);
+            if (mine.length === 0) return showError();
+
+            const latest = mine[mine.length - 1];
+            const room = rooms.find(r => r._id === latest.roomId);
+
+            renderReceipt({
+                roomName: room ? room.roomName : `Room ${latest.roomId}`,
+                speciality: room ? (room.speciality || '-') : '-',
+                bookingDate: latest.bookingDate,
+                timeSlot: latest.timeSlot,
+                studentId: latest.studentId
+            });
+        }).catch(err => {
+            console.error("Could not load latest booking:", err);
+            showError();
+        });
+    }
+
+    function renderReceipt(data) {
+        document.getElementById('lblRoomName').innerText = data.roomName || 'N/A';
+        document.getElementById('lblSpeciality').innerText = data.speciality || '-';
+        document.getElementById('lblBookingDate').innerText = data.bookingDate || 'N/A';
+        document.getElementById('lblTimeSlot').innerText = data.timeSlot || 'N/A';
+        document.getElementById('lblStudentId').innerText = data.studentId || 'N/A';
+
+        document.getElementById('receiptContent').style.display = 'block';
+        document.getElementById('errorBox').style.display = 'none';
+    }
+
+    function showError() {
+        document.getElementById('receiptContent').style.display = 'none';
+        document.getElementById('errorBox').style.display = 'block';
+    }
+</script>
+
+</body>
+</html>
