@@ -9,7 +9,7 @@ const router = express.Router();
 
 router.post('/register', async (req, res) => {
   const db = await connectDB();
-  const { userId, fullName, password, role } = req.body;
+  const { userId, fullName, email, password, role } = req.body;
 
   if (!userId || !password || !role) {
     return res.json({ status: 'error', message: 'userId, password, and role are required.' });
@@ -19,7 +19,7 @@ router.post('/register', async (req, res) => {
   // students are matched by "name" in the original SQL, admins by "username"
   const idField = role === 'admin' ? 'username' : 'name';
 
-  console.log(`DEBUG: Register request -> UserID: ${userId} | Name: ${fullName} | Role: ${role}`);
+  console.log(`DEBUG: Register request -> UserID: ${userId} | Name: ${fullName} | Email: ${email} | Role: ${role}`);
 
   try {
     const collection = db.collection(collectionName);
@@ -35,7 +35,7 @@ router.post('/register', async (req, res) => {
     }
 
     // insert new user
-    const newUser = { [idField]: userId, password: password };
+    const newUser = { [idField]: userId, password: password, email: email || null };
     if (role !== 'admin' && fullName) {
       newUser.fullName = fullName;
     }
@@ -84,7 +84,8 @@ router.post('/login', async (req, res) => {
         status: 'success',
         message: 'Authentication successful.',
         role: role,
-        userId: userid
+        userId: userid,
+        email: user.email || ''
       });
     } else {
       console.log('DEBUG: Authentication Failed!');
@@ -96,6 +97,154 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.log('DEBUG: Database Exception -> ' + err.message);
     return res.json({ status: 'fail', message: 'Database Service Error: ' + err.message });
+  }
+});
+
+// ===================== FORGOT PASSWORD =====================
+// Matches ForgotPasswordServlet.java logic
+// Body: { userid, role, newPassword }
+// No login required — resets the password for a known userid + role.
+
+router.post('/forgot-password', async (req, res) => {
+  const db = await connectDB();
+  const { userid, role, newPassword } = req.body;
+
+  if (!userid || !role || !newPassword) {
+    return res.json({ status: 'error', message: 'userid, role, and newPassword are required.' });
+  }
+
+  const collectionName = role === 'admin' ? 'admins' : 'students';
+  const idField = role === 'admin' ? 'username' : 'name';
+
+  try {
+    const collection = db.collection(collectionName);
+    const existing = await collection.findOne({ [idField]: userid });
+
+    if (!existing) {
+      return res.json({
+        status: 'error',
+        message: `User ID / Name tidak ditemui bagi peranan ${role}!`
+      });
+    }
+
+    const result = await collection.updateOne(
+      { [idField]: userid },
+      { $set: { password: newPassword } }
+    );
+
+    if (result.modifiedCount > 0) {
+      return res.json({
+        status: 'success',
+        message: 'Kata laluan akaun anda berjaya dikeset semula. Sila log masuk.'
+      });
+    } else {
+      return res.json({ status: 'error', message: 'Gagal mengemas kini pangkalan data.' });
+    }
+  } catch (err) {
+    console.log('DEBUG: Forgot Password Exception -> ' + err.message);
+    return res.json({ status: 'fail', message: 'Ralat Database Servis: ' + err.message });
+  }
+});
+
+// ===================== UPDATE PROFILE =====================
+// Matches UpdateProfileServlet.java logic, adapted for a stateless API:
+// since there's no server session, the frontend sends the CURRENT userId
+// + role to identify who's updating (taken from localStorage, set at login).
+// Body: { currentUserId, role, newUserId, email, oldPassword, newPassword }
+
+router.put('/profile', async (req, res) => {
+  const db = await connectDB();
+  const { currentUserId, role, newUserId, email, oldPassword, newPassword } = req.body;
+
+  if (!currentUserId || !role || !newUserId) {
+    return res.json({ status: 'error', message: 'Your session has expired. Please log in again.' });
+  }
+
+  const collectionName = role === 'admin' ? 'admins' : 'students';
+  const idField = role === 'admin' ? 'username' : 'name';
+
+  try {
+    const collection = db.collection(collectionName);
+    const existing = await collection.findOne({ [idField]: currentUserId });
+
+    if (!existing) {
+      return res.json({ status: 'error', message: 'Your session has expired. Please log in again.' });
+    }
+
+    const changePassword = !!(newPassword && newPassword.trim());
+
+    // Verify current password if the user is trying to change it
+    if (changePassword) {
+      if (!oldPassword || existing.password !== oldPassword) {
+        return res.json({ status: 'error', message: 'The current password you entered is incorrect!' });
+      }
+    }
+
+    // Guard against renaming into a userId that's already taken by someone else
+    if (newUserId !== currentUserId) {
+      const clash = await collection.findOne({ [idField]: newUserId });
+      if (clash) {
+        return res.json({ status: 'error', message: `User ID '${newUserId}' is already taken.` });
+      }
+    }
+
+    const updateFields = { [idField]: newUserId, email: email || '' };
+    if (changePassword) updateFields.password = newPassword;
+
+    const result = await collection.updateOne({ _id: existing._id }, { $set: updateFields });
+
+    if (result.matchedCount > 0) {
+      // Keep existing bookings pointing at the right student if their userId changed
+      if (role === 'student' && newUserId !== currentUserId) {
+        await db.collection('bookings').updateMany(
+          { studentId: currentUserId },
+          { $set: { studentId: newUserId } }
+        );
+      }
+
+      return res.json({
+        status: 'success',
+        message: 'Your profile and account information have been successfully updated.',
+        userId: newUserId,
+        email: email || ''
+      });
+    } else {
+      return res.json({ status: 'error', message: 'Failed to update database records. No shifts detected.' });
+    }
+  } catch (err) {
+    console.log('DEBUG: Update Profile Exception -> ' + err.message);
+    return res.json({ status: 'fail', message: 'Profile Service Error: ' + err.message });
+  }
+});
+
+// ===================== REGISTERED STUDENTS (admin only) =====================
+// Matches UserServlet.java logic (GET = list, POST id = delete).
+// Exposed here as proper REST verbs instead.
+
+router.get('/students', async (req, res) => {
+  const db = await connectDB();
+  try {
+    const students = await db.collection('students')
+      .find({}, { projection: { _id: 1, name: 1 } })
+      .toArray();
+    return res.json({ status: 'success', users: students });
+  } catch (err) {
+    return res.json({ status: 'error', message: err.message });
+  }
+});
+
+router.delete('/students/:id', async (req, res) => {
+  const db = await connectDB();
+  const { ObjectId } = require('mongodb');
+  try {
+    const result = await db.collection('students').deleteOne({ _id: new ObjectId(req.params.id) });
+    if (result.deletedCount > 0) {
+      return res.json({ status: 'success', message: 'User deleted successfully' });
+    } else {
+      return res.json({ status: 'error', message: 'User not found' });
+    }
+  } catch (err) {
+    return res.json({ status: 'error', message: err.message });
   }
 });
 

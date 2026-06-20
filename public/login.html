@@ -34,6 +34,10 @@
             <button type="submit" class="btn-login">Login</button>
 
             <div id="errorBox" class="error-msg"></div>
+
+            <div style="text-align: center; margin-top: 15px;">
+                <a href="forgot-password.html" style="color: #1e40af; font-size: 13.5px; text-decoration: none; font-weight: 600;">Forgot Password?</a>
+            </div>
         </form>
 
         <div style="text-align: center; margin-top: 20px; font-size: 13.5px; color: #64748b;">
@@ -76,7 +80,7 @@
             .then(response => response.json())
             .then(data => {
                 if (data.status === "success") {
-                    setSession(data.userId, data.role);
+                    setSession(data.userId, data.role, data.email);
                     window.location.href = data.role === "admin" ? "room-management.html" : "dashboard.html";
                 } else {
                     errorElement.innerText = data.message || "Invalid credentials. Please try again.";

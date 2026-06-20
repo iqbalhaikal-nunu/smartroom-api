@@ -2,7 +2,7 @@
 // Since the Node/Express API has no server-side session (unlike the original
 // Java/JSP app), the logged-in user is kept in localStorage instead.
 
-const SESSION_KEY = 'smartroomUser'; // stored as { userId, role }
+const SESSION_KEY = 'smartroomUser'; // stored as { userId, role, email }
 
 function getSession() {
   try {
@@ -12,8 +12,8 @@ function getSession() {
   }
 }
 
-function setSession(userId, role) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ userId, role }));
+function setSession(userId, role, email) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ userId, role, email: email || '' }));
 }
 
 function clearSession() {
