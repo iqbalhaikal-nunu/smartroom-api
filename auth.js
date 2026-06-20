@@ -248,4 +248,37 @@ router.delete('/students/:id', async (req, res) => {
   }
 });
 
+// Promote a student to admin: move their record from "students" into "admins".
+// Students are matched by "name", admins by "username" — so the field is renamed too.
+router.post('/students/:id/promote', async (req, res) => {
+  const db = await connectDB();
+  const { ObjectId } = require('mongodb');
+
+  try {
+    const student = await db.collection('students').findOne({ _id: new ObjectId(req.params.id) });
+    if (!student) {
+      return res.json({ status: 'error', message: 'User not found' });
+    }
+
+    // make sure this username isn't already taken in admins
+    const clash = await db.collection('admins').findOne({ username: student.name });
+    if (clash) {
+      return res.json({ status: 'error', message: `'${student.name}' already exists as an admin.` });
+    }
+
+    const newAdmin = {
+      username: student.name,
+      password: student.password,
+      email: student.email || null
+    };
+
+    await db.collection('admins').insertOne(newAdmin);
+    await db.collection('students').deleteOne({ _id: student._id });
+
+    return res.json({ status: 'success', message: `'${student.name}' has been promoted to Admin.` });
+  } catch (err) {
+    return res.json({ status: 'error', message: err.message });
+  }
+});
+
 module.exports = router;

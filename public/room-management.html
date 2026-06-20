@@ -175,6 +175,9 @@
                             Update
                         </button>
                         ${toggleAction}
+                        <button type="button" class="btn-action" style="background-color:#dc2626;color:white;" onclick="deleteRoom('${r._id}', '${escapeJs(r.roomName)}')">
+                            Delete
+                        </button>
                     </div>
                 </td>
             </tr>`;
@@ -201,6 +204,22 @@
             }
         })
         .catch(err => console.error("Error updating room status:", err));
+    }
+
+    // 2b. Delete room — DELETE /rooms/:id
+    function deleteRoom(id, roomName) {
+        if (!confirm(`Delete "${roomName}" permanently? This cannot be undone.`)) return;
+
+        fetch(`/rooms/${id}`, { method: 'DELETE' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.deletedCount !== undefined) {
+                fetchRooms();
+            } else {
+                alert("Delete failed: " + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(err => console.error("Error deleting room:", err));
     }
 
     // 3. GET /bookings
@@ -356,7 +375,12 @@
                 data.users.forEach(user => {
                     const row = `<tr>
                         <td><b style="color:#0f172a;">${escapeHtml(user.name)}</b></td>
-                        <td><button type="button" class="btn-action" style="background:#dc2626;" onclick="deleteUser('${user._id}')">Delete</button></td>
+                        <td>
+                            <div class="action-container">
+                                <button type="button" class="btn-action" style="background:#2563eb;color:white;" onclick="makeAdmin('${user._id}', '${escapeJs(user.name)}')">Make Admin</button>
+                                <button type="button" class="btn-action" style="background:#dc2626;" onclick="deleteUser('${user._id}')">Delete</button>
+                            </div>
+                        </td>
                     </tr>`;
                     body.innerHTML += row;
                 });
@@ -374,6 +398,18 @@
                 if (data.status === "success") loadUsers();
             })
             .catch(err => console.error("Error deleting user:", err));
+    }
+
+    function makeAdmin(id, name) {
+        if (!confirm(`Promote "${name}" to Admin? They will log in as an admin from now on.`)) return;
+
+        fetch(`/auth/students/${id}/promote`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                if (data.status === "success") loadUsers();
+            })
+            .catch(err => console.error("Error promoting user:", err));
     }
 
     function escapeHtml(str) {

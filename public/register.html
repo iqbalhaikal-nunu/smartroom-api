@@ -35,14 +35,6 @@
             </div>
         </div>
 
-        <div class="form-group">
-            <label>Account Type / Role</label>
-            <select name="role" required>
-                <option value="student">Student</option>
-                <option value="admin">Admin</option>
-            </select>
-        </div>
-
         <button type="submit" class="btn-register">Sign Up</button>
     </form>
 
@@ -73,7 +65,7 @@
             fullName: form.fullName.value,
             email: form.email.value,
             password: form.password.value,
-            role: form.role.value
+            role: 'student'
         };
 
         fetch('/auth/register', {
